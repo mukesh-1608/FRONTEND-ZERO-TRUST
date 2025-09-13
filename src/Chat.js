@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import api, { notifyTyping, uploadFile } from './api'; // Import uploadFile
+import api, { uploadFile } from './api';
 import sodium from 'libsodium-wrappers';
 import { toast } from 'react-toastify';
+import io from 'socket.io-client';
+
+// Establish a connection to the backend WebSocket server
+const socket = io('http://localhost:3001');
 
 const Chat = ({ username, onLogout }) => {
   const [users, setUsers] = useState([]);
@@ -35,35 +39,50 @@ const Chat = ({ username, onLogout }) => {
     }
   };
 
+  // --- Start of WebSocket Integration ---
+
+  // Handle user typing and emit event to the server
   const handleTyping = (e) => {
     setMessage(e.target.value);
     if (selectedFile) setSelectedFile(null);
 
+    // Let the recipient know you've started typing
     if (!typingTimeoutRef.current) {
-      notifyTyping(true, selectedUser);
+      socket.emit('typing', { from: username, recipient: selectedUser, isTyping: true });
     } else {
       clearTimeout(typingTimeoutRef.current);
     }
+
+    // Send a "stopped typing" event after a 2-second delay
     typingTimeoutRef.current = setTimeout(() => {
-      notifyTyping(false, selectedUser);
+      socket.emit('typing', { from: username, recipient: selectedUser, isTyping: false });
       typingTimeoutRef.current = null;
     }, 2000);
   };
+  
+  // Listen for incoming typing events from other users
+  useEffect(() => {
+    socket.on('typing', (data) => {
+      // Show the typing indicator only if it's from the currently selected user
+      if (data.from === selectedUser && data.recipient === username) {
+        setIsRecipientTyping(data.isTyping);
+      }
+    });
 
-  // --- Start of new/modified code for file handling ---
+    // Clean up the listener when the component unmounts
+    return () => {
+      socket.off('typing');
+    };
+  }, [selectedUser, username]);
+
+  // --- End of WebSocket Integration ---
+
 
   const decryptMessage = useCallback(async (msg) => {
     // If it's a file message, the plaintext is just the metadata
     if (msg.is_file) {
       try {
         const fileInfo = JSON.parse(msg.plaintext);
-        const privateKeyB64 = localStorage.getItem(`privateKey_${username}`);
-        const senderPublicKeyB64 = publicKeys[msg.from];
-        if (!privateKeyB64 || !senderPublicKeyB64) throw new Error("Keys not found for decryption.");
-
-        const privateKey = sodium.from_base_64(privateKeyB64, sodium.base64_variants.URLSAFE);
-        const senderPublicKey = sodium.from_base_64(senderPublicKeyB64, sodium.base64_variants.URLSAFE);
-        
         // This is where you would fetch the file blob and decrypt it
         // For now, we just return the metadata to render the link
         return { ...fileInfo, is_file: true, fileUrl: msg.fileUrl };
@@ -99,9 +118,13 @@ const Chat = ({ username, onLogout }) => {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if ((!message.trim() && !selectedFile) || !selectedUser) return;
-
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    notifyTyping(false, selectedUser);
+    
+    // Clear any pending "stopped typing" events since we are sending a message
+    if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+    }
+    socket.emit('typing', { from: username, recipient: selectedUser, isTyping: false });
 
     // Handle file sending
     if (selectedFile) {
@@ -111,6 +134,7 @@ const Chat = ({ username, onLogout }) => {
         plaintext: { fileName: selectedFile.name, is_file: true },
         status: 'Encrypting & Uploading...'
       }]);
+      const originalFile = selectedFile; // Keep a reference
       setSelectedFile(null);
       setMessage('');
       scrollToBottom();
@@ -121,7 +145,6 @@ const Chat = ({ username, onLogout }) => {
         if (!recipientPublicKeyB64) throw new Error("Recipient's public key not found.");
         const recipientPublicKey = sodium.from_base_64(recipientPublicKeyB64, sodium.base64_variants.URLSAFE);
 
-        // Read file as ArrayBuffer
         const reader = new FileReader();
         reader.onload = async (event) => {
           const fileContent = new Uint8Array(event.target.result);
@@ -129,7 +152,7 @@ const Chat = ({ username, onLogout }) => {
           const encryptedFile = sodium.crypto_box_seal(fileContent, recipientPublicKey);
           
           // Encrypt file metadata as the message
-          const fileMetadata = { fileName: selectedFile.name, is_file: true };
+          const fileMetadata = { fileName: originalFile.name, is_file: true };
           const encryptedMetadata = sodium.crypto_box_seal(JSON.stringify(fileMetadata), recipientPublicKey);
 
           // Prepare form data for upload
@@ -137,16 +160,19 @@ const Chat = ({ username, onLogout }) => {
           formData.append('to', selectedUser);
           formData.append('ttl', parseInt(ttl, 10));
           formData.append('metadata', sodium.to_base64(encryptedMetadata, sodium.base64_variants.URLSAFE));
-          formData.append('file', new Blob([encryptedFile]), selectedFile.name);
+          formData.append('file', new Blob([encryptedFile]), originalFile.name);
 
-          await uploadFile(formData);
+          // Use the new route for file uploads
+          await api.post('/messages/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
           setMessages(prev => prev.filter(m => m.id !== tempId)); // Remove temp message
           toast.success("Secure file sent successfully.");
         };
         reader.onerror = () => {
             throw new Error("Failed to read file.");
         };
-        reader.readAsArrayBuffer(selectedFile);
+        reader.readAsArrayBuffer(originalFile);
 
       } catch (error) {
         console.error("Failed to send file:", error);
@@ -169,7 +195,7 @@ const Chat = ({ username, onLogout }) => {
       if (!recipientPublicKeyB64) throw new Error("Recipient's public key not available.");
       const recipientPublicKey = sodium.from_base_64(recipientPublicKeyB64, sodium.base64_variants.URLSAFE);
       const ciphertext = sodium.crypto_box_seal(message, recipientPublicKey);
-      const ciphertextB64 = sodium.to_base_64(ciphertext, sodium.base64_variants.URLSAFE);
+      const ciphertextB64 = sodium.to_base64(ciphertext, sodium.base64_variants.URLSAFE);
       await api.post('/messages', {
           to: selectedUser, ciphertext: ciphertextB64, ttl: parseInt(ttl, 10)
       });
@@ -180,27 +206,24 @@ const Chat = ({ username, onLogout }) => {
     }
   };
 
-  // --- End of new/modified code for file handling ---
-
-
   useEffect(() => {
     const fetchUsersAndStatus = async () => {
       try {
         const usersResponse = await api.get('/users');
-        const otherUsers = usersResponse.data.filter(u => u.username !== username);
+        const otherUsers = usersResponse.data.data.users.filter(u => u.username !== username);
         setUsers(otherUsers);
         if (otherUsers.length > 0 && !selectedUser) {
             setSelectedUser(otherUsers[0].username);
         }
-        const onlineResponse = await api.get('/online-users');
-        setOnlineUsers(onlineResponse.data);
+        // This endpoint doesn't exist on the backend, so we will manage online status via WebSockets in a future step.
+        // For now, we can comment it out or create a placeholder.
+        // const onlineResponse = await api.get('/online-users'); 
+        // setOnlineUsers(onlineResponse.data);
       } catch (error) {
-        console.error("Failed to fetch users or online status", error);
+        console.error("Failed to fetch users", error);
       }
     };
     fetchUsersAndStatus();
-    const intervalId = setInterval(fetchUsersAndStatus, 5000);
-    return () => clearInterval(intervalId);
   }, [username, selectedUser]);
 
   useEffect(() => {
@@ -210,8 +233,8 @@ const Chat = ({ username, onLogout }) => {
         for (const uname of allUsernames) {
             if (!publicKeys[uname]) {
                 try {
-                    const response = await api.get(`/publicKey/${uname}`);
-                    keys[uname] = response.data.publicKey;
+                    const response = await api.get(`/auth/publicKey/${uname}`);
+                    keys[uname] = response.data.data.publicKey;
                 } catch (error) {
                     console.error(`Failed to fetch public key for ${uname}`, error);
                 }
@@ -225,30 +248,12 @@ const Chat = ({ username, onLogout }) => {
         fetchPublicKeys();
     }
   }, [users, username, publicKeys]);
-
-  useEffect(() => {
-    const fetchTypingStatus = async () => {
-        if (!selectedUser) return;
-        try {
-            const response = await api.get(`/typing-status/${selectedUser}`);
-            if (response.data && response.data.typingUsers) {
-                setIsRecipientTyping(response.data.typingUsers.includes(selectedUser));
-            } else {
-                setIsRecipientTyping(false);
-            }
-        } catch (error) {
-            setIsRecipientTyping(false);
-        }
-    };
-    const intervalId = setInterval(fetchTypingStatus, 1500);
-    return () => clearInterval(intervalId);
-  }, [selectedUser]);
-
+  
   useEffect(() => {
     const fetchMessages = async () => {
       try {
         const response = await api.get('/messages');
-        const receivedMessages = response.data;
+        const receivedMessages = response.data.data.messages;
         const existingMessageIds = new Set(messages.map(m => m.id));
         const newMessages = receivedMessages.filter(m => !existingMessageIds.has(m.id));
         
@@ -260,7 +265,7 @@ const Chat = ({ username, onLogout }) => {
                 } else if (content.is_file && msg.from !== username) {
                   toast.success(`New secure file from ${msg.from}`);
                 }
-                return { ...msg, plaintext: content };
+                return { ...msg, plaintext: content, from: msg.senderUsername, to: msg.recipientUsername };
             }));
             setMessages(prev => [...prev, ...decryptedMessages].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)));
         }
@@ -290,6 +295,7 @@ const Chat = ({ username, onLogout }) => {
           {users.map((user) => (
             <li key={user.id} className={`user-list-item ${selectedUser === user.username ? 'active' : ''}`} onClick={() => setSelectedUser(user.username)}>
               <span>{user.username}</span>
+              {/* Online status indicator can be implemented via WebSockets later */}
               <span className={`status-indicator ${onlineUsers[user.username] ? 'status-online' : 'status-offline'}`}></span>
             </li>
           ))}
@@ -301,10 +307,11 @@ const Chat = ({ username, onLogout }) => {
           {currentChatMessages.map((msg) => (
             <div key={msg.id} className={`message ${msg.from === username ? 'sent' : 'received'} message-animated`}>
               {msg.is_file && typeof msg.plaintext === 'object' ? (
-                <div className="file-message">
+                 <div className="file-message">
                   <span className="file-message-icon">📄</span>
                   <div className="file-message-info">
-                    <a href="#" onClick={(e) => { e.preventDefault(); alert("File download/decryption not yet implemented."); }}>
+                    {/* The link now correctly points to the backend server */}
+                    <a href={`http://localhost:3001${msg.fileUrl}`} target="_blank" rel="noopener noreferrer">
                       {msg.plaintext.fileName}
                     </a>
                   </div>
@@ -313,7 +320,7 @@ const Chat = ({ username, onLogout }) => {
                 <p>{msg.plaintext}</p>
               )}
               {(msg.status || messageStatus[msg.id]) && (
-                <small style={{ color: msg.from === username ? '#0d1a0a' : '#e0e0e-0', opacity: 0.7 }}>
+                <small style={{ color: msg.from === username ? '#0d1a0a' : '#e0e0e0', opacity: 0.7 }}>
                   <em>{msg.status || messageStatus[msg.id]}</em>
                 </small>
               )}
