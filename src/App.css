@@ -1,38 +1,189 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #282c34;
+  color: white;
+}
+
 .App {
   text-align: center;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
-}
-
 .App-header {
-  background-color: #282c34;
-  min-height: 100vh;
+  background-color: #1e2128;
+  padding: 20px;
+  color: white;
+  border-bottom: 1px solid #444;
+}
+
+main {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: calc(100vh - 101px);
+}
+
+.loading-screen {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+}
+
+/* Auth Component */
+.auth-container {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+  gap: 15px;
+  width: 300px;
+  padding: 20px;
+  background-color: #3a3f4b;
+  border-radius: 8px;
+}
+
+.auth-container input {
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  background-color: #282c34;
   color: white;
 }
 
-.App-link {
-  color: #61dafb;
+.auth-container button {
+  padding: 10px;
+  border-radius: 4px;
+  border: none;
+  background-color: #61dafb;
+  color: #282c34;
+  font-weight: bold;
+  cursor: pointer;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.auth-container button.toggle-auth {
+  background-color: transparent;
+  color: #61dafb;
+  margin-top: 10px;
+}
+
+/* Chat Component */
+.chat-container {
+  display: flex;
+  width: 80vw;
+  height: 80vh;
+  max-width: 1000px;
+  background-color: #3a3f4b;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 200px;
+  background-color: #282c34;
+  padding: 10px;
+  border-right: 1px solid #444;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar h3 {
+  margin-top: 0;
+}
+
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex-grow: 1;
+}
+
+.sidebar li {
+  padding: 10px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.sidebar li:hover {
+  background-color: #4a4f5a;
+}
+
+.sidebar li.active {
+  background-color: #61dafb;
+  color: #282c34;
+  font-weight: bold;
+}
+
+.logout-btn {
+    padding: 10px;
+    border-radius: 4px;
+    border: none;
+    background-color: #ff4d4d;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.chat-main {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.message-area {
+  flex-grow: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.message {
+  padding: 10px 15px;
+  border-radius: 18px;
+  max-width: 60%;
+}
+
+.message.sent {
+  background-color: #61dafb;
+  color: #282c34;
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+
+.message.received {
+  background-color: #4a4f5a;
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+.message-input-area {
+  display: flex;
+  padding: 10px;
+  border-top: 1px solid #444;
+}
+
+.message-input-area textarea {
+  flex-grow: 1;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  background-color: #282c34;
+  color: white;
+  resize: none;
+}
+
+.message-input-area select, .message-input-area button {
+    margin-left: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    border: none;
+    background-color: #61dafb;
+    color: #282c34;
+    font-weight: bold;
+    cursor: pointer;
 }
