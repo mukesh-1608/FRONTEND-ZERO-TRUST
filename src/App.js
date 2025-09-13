@@ -1,47 +1,71 @@
 import React, { useState, useEffect } from 'react';
-import sodium from 'libsodium-wrappers';
 import Auth from './Auth';
 import Chat from './Chat';
-import './App.css'; // We will create this file later
+import './App.css';
+import api from './api';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 function App() {
-  const [isSodiumReady, setIsSodiumReady] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [username, setUsername] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const initSodium = async () => {
-      await sodium.ready;
-      setIsSodiumReady(true);
-    };
-    initSodium();
-
-    const token = localStorage.getItem('jwt');
-    if (token) {
-      setIsAuthenticated(true);
+    const token = localStorage.getItem('token');
+    const storedUsername = localStorage.getItem('username');
+    if (token && storedUsername) {
+      setIsLoggedIn(true);
+      setUsername(storedUsername);
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     }
+    setIsLoading(false);
   }, []);
 
-  const handleLogin = () => {
-    setIsAuthenticated(true);
+  const handleLogin = (newUsername, token) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('username', newUsername);
+    setUsername(newUsername);
+    setIsLoggedIn(true);
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   };
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
+    localStorage.removeItem('token');
+    localStorage.removeItem('username');
+    setUsername('');
+    setIsLoggedIn(false);
+    delete api.defaults.headers.common['Authorization'];
   };
 
-
-  if (!isSodiumReady) {
-    return <div className="loading-screen"><h1>Loading Cryptography Modules...</h1></div>;
+  if (isLoading) {
+    return <div className="loading-screen">INITIALIZING SECURE CHANNEL...</div>;
   }
 
   return (
     <div className="App">
+      {/* Add the ToastContainer here for notifications */}
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="dark"
+      />
       <header className="App-header">
-        <h1>Aegis Secure Chat</h1>
+        <h1>
+          <span className="secure-indicator"></span>
+          ZERO TRUST
+        </h1>
       </header>
       <main>
-        {isAuthenticated ? (
-          <Chat onLogout={handleLogout} />
+        {isLoggedIn ? (
+          <Chat username={username} onLogout={handleLogout} />
         ) : (
           <Auth onLogin={handleLogin} />
         )}
