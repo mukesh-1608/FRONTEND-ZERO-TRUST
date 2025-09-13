@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import Auth from './Auth';
+import SecureAuth from './SecureAuth';
 import Chat from './Chat';
 import './App.css';
 import api from './api';
@@ -39,37 +39,19 @@ function App() {
   };
 
   if (isLoading) {
-    return <div className="loading-screen">INITIALIZING SECURE CHANNEL...</div>;
+    return (
+      <div className="loading-screen">
+        Loading Secure Channel...
+      </div>
+    );
   }
 
   return (
     <div className="App">
-      {/* Add the ToastContainer here for notifications */}
-      <ToastContainer
-        position="top-right"
-        autoClose={5000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="dark"
-      />
-      <header className="App-header">
-        <h1>
-          <span className="secure-indicator"></span>
-          ZERO TRUST
-        </h1>
-      </header>
-      <main>
-        {isLoggedIn ? (
-          <Chat username={username} onLogout={handleLogout} />
-        ) : (
-          <Auth onLogin={handleLogin} />
-        )}
-      </main>
+      <ToastContainer position="top-right" />
+      {!isLoggedIn
+        ? <SecureAuth onLogin={handleLogin} />
+        : <Chat username={username} onLogout={handleLogout} />}
     </div>
   );
 }
